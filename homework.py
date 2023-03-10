@@ -2,12 +2,12 @@ import logging
 import os
 import sys
 import time
+from exceptions import EmptyStatusError, UndocumentedStatusError
+from http import HTTPStatus
 
 import requests
 import telegram
-from http import HTTPStatus
 from dotenv import load_dotenv
-from exceptions import UndocumentedStatusError, EmptyStatusError
 
 load_dotenv()
 
