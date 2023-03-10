@@ -1,13 +1,15 @@
+import json
 import logging
 import os
 import sys
 import time
-from exceptions import EmptyStatusError, UndocumentedStatusError
 from http import HTTPStatus
 
 import requests
 import telegram
 from dotenv import load_dotenv
+
+from exceptions import EmptyStatusError, JSONError, UndocumentedStatusError
 
 load_dotenv()
 
@@ -35,6 +37,8 @@ logging.basicConfig(
     ]
 )
 
+logger = logging.getLogger(__name__)
+
 
 def check_tokens() -> bool:
     """Функция проверяет доступность переменных окружения."""
@@ -43,13 +47,12 @@ def check_tokens() -> bool:
 
 def send_message(bot: telegram.bot.Bot, message: str) -> None:
     """Функция отправляет сообщение в Telegram чат."""
-    chat_id = TELEGRAM_CHAT_ID
-    logging.debug('Сообщение отправляется')
+    logger.debug('Сообщение отправляется')
     try:
-        bot.send_message(chat_id, message)
-        logging.debug('Cообщение успешно отправлено')
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.debug('Cообщение успешно отправлено')
     except telegram.error.TelegramError as error:
-        logging.error(f"Ошибка отправки статуса в telegram: {error}")
+        logger.error(f"Ошибка отправки статуса в telegram: {error}")
 
 
 def get_api_answer(timestamp: int) -> dict:
@@ -58,29 +61,35 @@ def get_api_answer(timestamp: int) -> dict:
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
     except requests.RequestException:
-        logging.error('Ошибка при запросе к ENDPOINT')
+        raise Exception('Ошибка при запросе к ENDPOINT.')
     if response.status_code != HTTPStatus.OK:
-        logging.error(f'Статус ответа от ENDPOINT '
-                      f'API-сервиса: {response.status_code}')
-        raise requests.HTTPError('Код ответа на запрос не равен 200')
+        raise requests.HTTPError(f'Код ответа {response.status_code} '
+                                 f'не равен 200')
+    try:
+        return response.json()
+    except json.JSONDecodeError:
+        raise JSONError('Формат ответа не json')
     return response.json()
 
 
 def check_response(response: dict) -> list:
     """Функция проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
-        logging.error('Неожиданный формат ответа домашней работы')
-        raise TypeError
+        raise TypeError('Формат ответа не словарь')
+    if 'homeworks' not in response.keys():
+        raise KeyError('Ключ "homeworks" отсутствует в словаре')
+    if 'current_date' not in response.keys():
+        raise KeyError('Ключ "current_date" отсутствует в словаре')
     response_list = response.get('homeworks')
     if not isinstance(response_list, list):
-        logging.error('В ответе API домашки под ключом `homeworks` данные '
-                      'приходят не в виде списка.')
-        raise TypeError
+        raise TypeError('Формат ответа не список')
     return response_list
 
 
 def parse_status(homework: dict) -> str:
     """Функция извлекает статус домашней работы."""
+    if 'homework_name' not in homework:
+        raise KeyError('Такого ключа homework_name нет')
     homework_name = homework.get('homework_name')
     status_homework = homework.get('status')
     if status_homework not in HOMEWORK_VERDICTS:
@@ -89,8 +98,6 @@ def parse_status(homework: dict) -> str:
     verdict = HOMEWORK_VERDICTS.get(status_homework)
     if not verdict:
         raise EmptyStatusError('Нет статуса домашней работы')
-    if 'homework_name' not in homework:
-        raise KeyError('Такого ключа homework_name нет')
     return (f'Изменился статус проверки '
             f'работы "{homework_name}". {verdict}')
 
@@ -108,14 +115,9 @@ def check_send_message(message: str, homework: list) -> None:
     Тип сообщения и содержит ли оно статус из словаря.
     """
     if not isinstance(message, str):
-        logging.error('Подготовленное сообщение '
-                      'не является типом строка')
         raise TypeError('Подготовленное сообщение не строка')
     status = homework[0].get('status')
     if HOMEWORK_VERDICTS[status] not in message:
-        print('test')
-        logging.warning('Подготовленное сообщение '
-                        'с вердиктом не из словаря')
         raise TypeError('Подготовленное сообщение не из словаря')
 
 
@@ -123,19 +125,19 @@ def generate_message(homework: list) -> str:
     """Функция формирует сообщение о статусе."""
     if homework:
         message = parse_status(homework[0])
-        logging.debug(message)
+        logger.debug(message)
         check_send_message(message, homework)
     else:
         message = 'Новых статусов нет'
-        logging.debug(message)
+        logger.debug(message)
     return message
 
 
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logging.critical('Отсутствие обязательных переменных '
-                         'окружения во время запуска бота')
+        logger.critical('Отсутствие обязательных переменных '
+                        'окружения во время запуска бота')
         raise SystemExit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
@@ -144,13 +146,14 @@ def main():
         try:
             response = get_api_answer(timestamp)
             timestamp = int(response.get('current_date'))
+            print(response)
             homework = check_response(response)
             message = generate_message(homework)
             if check_changed_value(message):
                 send_message(bot, message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logging.error(message)
+            logger.error(message)
         finally:
             time.sleep(RETRY_PERIOD)
 
@@ -159,4 +162,4 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        logging.exception('Бот остановлен')
+        logger.exception('Бот остановлен')

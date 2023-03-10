@@ -11,3 +11,9 @@ class EmptyStatusError(Exception):
     """Отсутствует статус домашней работы."""
 
     ...
+
+
+class JSONError(Exception):
+    """Ошибка формата JSON."""
+
+    ...
