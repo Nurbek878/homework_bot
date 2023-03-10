@@ -26,7 +26,7 @@ pip install -r requirements.txt
 ```
 PRACTICUM_TOKEN=<practicum's token>
 TELEGRAM_TOKEN=<your token>
-CHAT_ID=<your token>
+CHAT_ID=<your chat_id>
 ```
 - Запускаем бота:
 ```
