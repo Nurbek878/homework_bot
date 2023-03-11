@@ -69,16 +69,15 @@ def get_api_answer(timestamp: int) -> dict:
         return response.json()
     except json.JSONDecodeError:
         raise JSONError('Формат ответа не json')
-    return response.json()
 
 
 def check_response(response: dict) -> list:
     """Функция проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
         raise TypeError('Формат ответа не словарь')
-    if 'homeworks' not in response.keys():
+    if 'homeworks' not in response:
         raise KeyError('Ключ "homeworks" отсутствует в словаре')
-    if 'current_date' not in response.keys():
+    if 'current_date' not in response:
         raise KeyError('Ключ "current_date" отсутствует в словаре')
     response_list = response.get('homeworks')
     if not isinstance(response_list, list):
@@ -146,7 +145,6 @@ def main():
         try:
             response = get_api_answer(timestamp)
             timestamp = int(response.get('current_date'))
-            print(response)
             homework = check_response(response)
             message = generate_message(homework)
             if check_changed_value(message):
